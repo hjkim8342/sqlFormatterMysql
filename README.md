@@ -13,7 +13,7 @@ MAC > Dbeaver > Sql External Formatter
 
 <img width="237" height="268" alt="스크린샷 2025-10-21 오후 1 07 21" src="https://github.com/user-attachments/assets/496693a3-8a1c-43c2-b8bc-662e23d33ff2" />
 
-<img width="1988" height="1039" alt="스크린샷 2025-10-21 오후 1 08 38" src="https://github.com/user-attachments/assets/30f6f3aa-6d7d-47c0-ab1e-4d12d608eef3" />
+<img width="1208" height="928" alt="스크린샷 2025-10-21 오후 1 22 31" src="https://github.com/user-attachments/assets/9366945f-ca42-4881-b9d4-2204a06f2384" />
 
 Apply > Apply and Close
 
