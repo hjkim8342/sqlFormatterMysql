@@ -16,3 +16,6 @@ MAC > Dbeaver > Sql External Formatter
 <img width="1988" height="1039" alt="스크린샷 2025-10-21 오후 1 08 38" src="https://github.com/user-attachments/assets/30f6f3aa-6d7d-47c0-ab1e-4d12d608eef3" />
 
 Apply > Apply and Close
+
+
+### Dbeaver Formatter HOT KEY : Ctrl + Shift + F
