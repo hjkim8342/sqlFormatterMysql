@@ -10,6 +10,11 @@ process.stdin.on("data", (chunk) => {
 process.stdin.on("end", () => {
   // 1. 연속 공백 제거
   let formatted = sql.replace(/\s+/g, " ");
+  // (, ), , 특수문자 좌우 공백 모두 제거
+  formatted = formatted.replace(/\s*\(\s*/g, "(");
+  formatted = formatted.replace(/\s*\)\s*/g, ")");
+  formatted = formatted.replace(/\s*,\s*/g, ",");
+  formatted = formatted.replace(/\s*;\s*/g, ";");
 
   // 2. 주요 키워드 줄바꿈 + 뒤 공백 1칸
   const keywords = [
@@ -21,15 +26,40 @@ process.stdin.on("end", () => {
     "WHERE",
     "JOIN",
     "INNER JOIN",
+    "OUTER JOIN",
     "LEFT JOIN",
+    "RIGHT JOIN",
+    "FULL JOIN",
+    "CROSS JOIN",
+    "NATURAL JOIN",
     "LEFT OUTER JOIN",
+    "RIGHT OUTER JOIN",
+    "FULL OUTER JOIN",
+    "CROSS OUTER JOIN",
+    "NATURAL OUTER JOIN",
     "GROUP BY",
     "ORDER BY",
     "LIMIT",
     "SET",
     "HAVING",
     "UNION",
-    "EXISTS",
+    "EXCEPT",
+    "INTERSECT",
+    "UNION ALL",
+    "EXCEPT ALL",
+    "INTERSECT ALL",
+    "UNION DISTINCT",
+    "EXCEPT DISTINCT",
+    "INTERSECT DISTINCT",
+    "UNION DISTINCT",
+    "EXCEPT DISTINCT",
+    "INTERSECT DISTINCT",
+    "UNION DISTINCT",
+    "EXCEPT DISTINCT",
+    "INTERSECT DISTINCT",
+    "UNION DISTINCT",
+    "EXCEPT DISTINCT",
+    "INTERSECT DISTINCT",
   ];
   const regex = new RegExp(`\\b(${keywords.join("|")})\\b`, "gi");
   let firstKeyword = true;
@@ -41,15 +71,6 @@ process.stdin.on("end", () => {
       return "\n" + m.toUpperCase();
     }
   });
-
-  // 키워드 뒤 공백 2개 이상 → 1개로
-  formatted = formatted.replace(/([A-Z]+\b) {2,}/g, "$1 ");
-  // 연속 줄바꿈 2개 이상 → 1개로
-  formatted = formatted.replace(/\n{2,}/g, "\n");
-  // 공백+줄바꿈 섞인 것도 줄바꿈 1개로
-  formatted = formatted.replace(/ *\n+ */g, "\n");
-  // 닫힘 괄호 뒤 공백만 제거 (원래 의도 유지)
-  formatted = formatted.replace(/\)( +)/g, ")");
 
   // ===== 콤마 처리 개선 (괄호/SELECT 절 조건 포함) =====
   formatted = formatted.replace(/,\s*/g, function (match, offset, str) {
@@ -112,59 +133,89 @@ process.stdin.on("end", () => {
   // ===== ')' 바로 뒤에 AND/OR/ON 붙어있는 경우 공백 삽입 (예: ")AND" -> ") AND") =====
   formatted = formatted.replace(/\)(?=(AND|OR|ON|AS)\b)/gi, ") ");
 
-  // ===== AND / OR / ON 처리: WHERE/ON/HAVING 기준 괄호 내부면 줄바꿈 억제, 그 외 줄바꿈 =====
-  // WHERE/ON/HAVING 이후 범위에서의 괄호 깊이만 고려하여 서브쿼리 외부 괄호 영향 제거
+  // WHERE/HAVING 이후 범위에서의 괄호 깊이만 고려하여 서브쿼리 외부 괄호 영향 제거
   formatted = formatted.replace(
-    /\s+(AND|OR|ON)\s+/gi,
+    /\s+(AND NOT EXISTS|AND EXISTS|OR NOT EXISTS|OR EXISTS|AND|OR|ON)\s+/gi,
     function (match, p1, offset, str) {
-      const upper = str.toUpperCase();
-      // 최근 조건 시작 키워드 위치 탐색 (WHERE, ON, HAVING)
-      const lastWhere = upper.lastIndexOf(" WHERE ", offset);
-      const lastOn = upper.lastIndexOf(" ON ", offset);
-      const lastHaving = upper.lastIndexOf(" HAVING ", offset);
-      const clauseStart = Math.max(lastWhere, lastOn, lastHaving);
-
-      if (clauseStart !== -1) {
-        const segment = str.slice(clauseStart, offset);
-        const opens = (segment.match(/\(/g) || []).length;
-        const closes = (segment.match(/\)/g) || []).length;
-        const inClauseParen = opens > closes;
-        if (inClauseParen) {
-          return " " + p1 + " ";
-        }
-        return "\n    " + p1 + " ";
-      }
-
-      // 안전장치: 조건 키워드를 찾지 못하면 기존 전역 괄호 기준으로 판단
-      const before = str.slice(0, offset);
-      const openCount = (before.match(/\(/g) || []).length;
-      const closeCount = (before.match(/\)/g) || []).length;
-      const inParen = openCount > closeCount;
-      if (inParen) {
+      // 복합 키워드(AND NOT EXISTS 등)면 무조건 한 줄
+      if (/^(AND|OR) (NOT )?EXISTS$/i.test(p1)) {
         return " " + p1 + " ";
       }
+      // 나머지 AND/OR/ON: 괄호 패턴 내부만 한 줄
+      const ustr = str.toUpperCase();
+      let found = false;
+      ["WHERE(", "HAVING(", "AND(", "OR(", "ON("].forEach((prefix) => {
+        const pIdx = ustr.lastIndexOf(prefix, offset);
+        if (pIdx !== -1) {
+          // 괄호 범위
+          let depth = 0,
+            sIdx = -1,
+            eIdx = -1;
+          for (let i = pIdx + prefix.length - 1; i < str.length; i++) {
+            if (str[i] === "(") {
+              if (depth === 0) sIdx = i;
+              depth++;
+            }
+            if (str[i] === ")") {
+              depth--;
+              if (depth === 0) {
+                eIdx = i;
+                break;
+              }
+            }
+          }
+          if (sIdx !== -1 && eIdx !== -1 && offset > sIdx && offset < eIdx) {
+            found = true;
+          }
+        }
+      });
+      if (found) return " " + p1 + " ";
       return "\n    " + p1 + " ";
     }
   );
+
+  function isExtraIndentBlock(formatted, i) {
+    // 바로 앞에 AND(, OR(, ON(, JOIN(, EXISTS( 등 패턴인지(공백 없이)
+    const check = formatted.slice(Math.max(0, i - 7), i + 1).toUpperCase();
+    return /(?:AND\(|OR\(|ON\(|JOIN\(|EXISTS\()$/.test(check);
+  }
 
   // 3. 괄호 들여쓰기 처리
   let result = "";
   let indentLevel = 0;
   let inLineStart = true;
+  let extraIndentStack = [];
   for (let i = 0; i < formatted.length; i++) {
     const char = formatted[i];
     if (char === "(") {
+      let isExtra = false;
+      if (isExtraIndentBlock(formatted, i)) {
+        indentLevel++;
+        isExtra = true;
+      }
       indentLevel++;
-      result += "(";
+      if (isExtra) extraIndentStack.push(i);
+      result += char;
       inLineStart = false;
+      continue;
     } else if (char === ")") {
       indentLevel--;
+      // extra indent 적용된 괄호 닫힘일 경우 한 번 더 내림
+      if (
+        extraIndentStack.length &&
+        extraIndentStack[extraIndentStack.length - 1] < i
+      ) {
+        indentLevel--;
+        extraIndentStack.pop();
+      }
       if (inLineStart) result += "    ".repeat(Math.max(0, indentLevel));
-      result += ")";
+      result += char;
       inLineStart = false;
+      continue;
     } else if (char === "\n") {
       result += char;
       inLineStart = true;
+      continue;
     } else {
       if (inLineStart) {
         result += "    ".repeat(Math.max(0, indentLevel));
@@ -175,19 +226,19 @@ process.stdin.on("end", () => {
   }
   formatted = result;
 
-  // 6. 세미콜론 뒤 한 줄 띄우기
-  formatted = formatted.replace(/;/g, ";\n");
+  // WHERE( / HAVING( / AND( / OR( / ON( → 키워드 뒤 공백 삽입하여 WHERE ( 형태로 보정
+  formatted = formatted.replace(
+    /\b(WHERE|HAVING|AND|OR|ON|JOIN|EXISTS|IN)\(/gi,
+    "$1 ("
+  );
 
-  // 7. 여러 줄 공백 제거
-  formatted = formatted.replace(/\n\s*\n+/g, "\n");
-
-  // 8. 첫 줄 들여쓰기 제거
-  formatted = formatted.replace(/^\s+/, "");
-
-  // 9. 비교 연산자 + AS 공백 정리
-  formatted = formatted.replace(/\s*(!=|<>|>=|<=|!<|!>|=|>|<)\s*/gi, " $1 ");
-  formatted = formatted.replace(/([\)\`\'])(AS)/gi, "$1 $2");
-  formatted = formatted.replace(/(AS)([\(\`\'])/gi, "$1 $2");
+  // 닫힘 괄호 ) 뒤에 줄바꿈이나 공백이 없으면 공백 하나 삽입
+  formatted = formatted.replace(/\)(?!\s|\n)/g, ") ");
+  // 줄바꿈 앞에 공백이 있으면 공백 제거
+  formatted = formatted.replace(/\s+\n/g, "\n");
 
   process.stdout.write(formatted);
+
+  // process.stdout.write(formatted);
+  // return;
 });
